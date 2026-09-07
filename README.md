@@ -1,184 +1,73 @@
-# Doubts App (Rooms Collaboration V1)
+# Doubtabase for Mac
 
-Production-ready web app to capture, filter, search, and collaborate on doubts in personal and shared workspaces.
+Doubtabase is a native SwiftUI macOS foundation for saving difficult question screenshots during study.
 
-## Stack
+## Current slice
 
-- Next.js (App Router, TypeScript)
-- Supabase (Postgres + Auth + Storage + Realtime)
-- Supabase RLS for room-scoped access control
-- Sentry for frontend/API error tracking
-- Tailwind CSS v4 + daisyUI
-- Vitest for unit tests
+- Compact top-center borderless capture panel that blends into the menu-bar/notch area when idle.
+- Expanded drop target when an image is dragged over the panel.
+- Public SwiftUI drag-and-drop support for image files and macOS screenshot thumbnails (file URL, PNG, TIFF, and generic image data).
+- Lightweight expansion while a drag is over the target, with a stable hit region so the panel does not chase the pointer.
+- Local image copies and a JSON library stored in the app's Application Support directory.
+- On-device OCR of screenshot text using Apple Vision.
+- Local English sentence embeddings, persisted with overlapping text chunks in the JSON library.
+- Vector-based subject suggestions; ambiguous or unreadable captures stay Unsorted.
+- Hybrid keyword and cosine-similarity search, sorted by relevance within the selected sidebar filter.
+- Cited RAG context preview and clipboard export from the top five retrieved questions.
+- Sidebar navigation for all questions, questions to review, reviewed questions, and subjects.
+- Search with Command-F and image import with Command-O.
+- Uncropped image previews, a full question viewer, and Open original.
+- Persistent review status with live counts; sample questions are labeled.
+- A black capture panel that expands on hover, with space reserved below the physical notch.
 
-## Features
+The panel is a normal floating app window positioned at the top center of the display. It does not access or integrate with the physical Mac notch, and no private APIs are used.
 
-- Hero landing page at `/`
-- Email/password signup with name capture
-- Email/password login
-- Google OAuth login (optional)
-- Workspaces:
-  - Personal room per user (private)
-  - Shared rooms (owner + members)
-- Room invite codes (reusable until owner rotates)
-- Spreadsheet-like doubt entry and editing
-- Doubt CRUD + clear toggle + filters + keyword search
-- Owner-only deletes in shared rooms
-- Attachment uploads via presigned URLs (private bucket)
-- Realtime sync across members in open rooms
-- Room-scoped comments on doubt detail pages
-- Shared-room email notification on new doubts (SMTP)
-- `/api/health` endpoint for uptime monitoring
-- Structured JSON logs for API actions/errors
-
-## Local Setup
-
-1. Install dependencies:
+## Run locally
 
 ```bash
-npm install
+swift build
+swift run
 ```
 
-2. Copy env file:
+To create a local `.app` bundle for opening in Finder or with `open`:
 
 ```bash
-cp .env.example .env.local
+./scripts/build-app.sh
+open .build/Recall.app
 ```
 
-3. Fill required env vars:
+The local environment has the Swift compiler and macOS SDK, but not the full Xcode app. `swift build` and the local `.app` launch are the available verification paths here; signing, entitlements, and App Store submission still need to be completed in Xcode on a development machine with an Apple Developer account.
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`)
-- `SUPABASE_SERVICE_ROLE_KEY` (required for secure room-join flow)
+## Semantic retrieval
 
-Optional:
+Existing captures are indexed automatically on launch; new captures are indexed in the background.
+Open a question to inspect recognized text. OCR failures can be retried using **Retry indexing**.
+Screenshots, recognized text, and vectors remain on this Mac; no credentials or remote database are required.
+The embedding cache includes the Apple model revision and chunking version and is refreshed when either changes.
 
-- `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN`
-- `SUPABASE_ATTACHMENTS_BUCKET` (defaults to `doubts-attachments`)
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (for shared-room doubt email notifications)
+Enter a study concept in search to rank questions by relevance. Exact text matches are preferred,
+with semantic similarity extending retrieval to related wording. English embeddings depend on the
+model being available on macOS; when unavailable, keyword search still works. OCR may miss handwriting,
+equations, or diagram-only questions. Subject labels are suggestions, not verified classifications.
+The index uses a linear scan, intended for a personal library rather than a large shared collection.
 
-4. Apply SQL migrations in Supabase SQL Editor, in order:
+**View RAG context** shows bounded source excerpts with stable question IDs and numbered citations.
+**Copy context** exports a grounding prompt for a language model. This version implements retrieval
+and context assembly, not generated answers or a chat model. No source content is sent anywhere automatically.
 
-- `supabase/migrations/0001_init.sql`
-- `supabase/migrations/0002_rooms.sql`
-- `supabase/migrations/0003_doubt_comments.sql`
-
-5. Configure Supabase Auth based on your preference:
-
-- If you want public signup, keep email/password signup enabled.
-- If you want invite-only, disable open signup in Supabase Dashboard and pre-create users.
-- If you enable Google OAuth, add `http://localhost:3000/auth/callback` and your production callback URL (for example `https://doubtabase.sbs/auth/callback`) to Supabase Auth redirect URLs.
-
-6. Start dev server:
+Run the retrieval checks (compatible with Command Line Tools without XCTest):
 
 ```bash
-npm run dev
+./scripts/test-retrieval.sh
 ```
 
-## API Surface
+Apple API references: [sentence embeddings](https://developer.apple.com/documentation/naturallanguage/nlembedding)
+and [text recognition](https://developer.apple.com/documentation/vision/vnrecognizetextrequest).
 
-### Auth
+## Organizing questions
 
-- `POST /api/auth/token` (email/password login that returns access + refresh token)
-- `GET /api/auth/ingest-key` (returns active personal ingest key metadata)
-- `POST /api/auth/ingest-key` (rotates personal ingest key and returns the new key once)
-- `DELETE /api/auth/ingest-key` (revokes active personal ingest key)
+Use the + beside Folders or Subjects to create your own groups. Add screenshots while viewing a folder or subject to assign them on import. A question can belong to one folder and one subject. Open a question to change either assignment, or right-click a card to move it to a folder. Right-click a folder to rename it or remove it while keeping its questions in Unfiled. Manually chosen subjects are preserved during text recognition.
 
-### Rooms
+New libraries start empty. Existing question-only library files are migrated on the next save; questions, folders, and custom subjects are saved together in the local library index.
 
-- `GET /api/rooms`
-- `POST /api/rooms`
-- `POST /api/rooms/join`
-- `POST /api/rooms/:roomId/invite/rotate`
-- `GET /api/rooms/:roomId/members`
-
-### Doubts
-
-- `POST /api/doubts` (supports `room_id`; falls back to personal room if omitted)
-- `POST /api/doubts/ingest` (base64 ingest; always writes to your personal room)
-- `GET /api/doubts?room_id&q&subject&subtopic&difficulty&error_tag&is_cleared&cursor&limit`
-- `GET /api/doubts/:id`
-- `PATCH /api/doubts/:id`
-- `DELETE /api/doubts/:id` (owner-only in shared rooms)
-- `PATCH /api/doubts/:id/clear`
-- `POST /api/doubts/:id/attachments/presign`
-- `POST /api/doubts/:id/comments`
-- `DELETE /api/attachments/:id` (owner-only in shared rooms)
-- `GET /api/health`
-
-`POST /api/doubts/ingest` request body:
-
-```json
-{
-  "notes": "Optional plain text notes",
-  "title": "Optional title",
-  "subject": "Optional subject",
-  "subtopics": ["Optional"],
-  "difficulty": "medium",
-  "error_tags": ["Optional"],
-  "is_cleared": false,
-  "endpoints": ["https://api.example.com/v1/ingest"],
-  "attachments": [
-    {
-      "filename": "screenshot.png",
-      "mime_type": "image/png",
-      "data_base64": "iVBORw0KGgoAAA..."
-    }
-  ]
-}
-```
-
-Notes:
-- Requires authentication via one of:
-  - `Authorization: Bearer <access_token>`
-  - `x-ingest-key: <your-personal-ingest-key>`
-  - Supabase auth cookies
-- Maps `notes` into `body_markdown` and appends `endpoints` to the note body.
-- `attachments` accepts base64 image payloads and stores them in the same storage bucket used by standard uploads.
-- At least one of `notes` or `attachments` is required.
-
-## Quality Commands
-
-```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
-```
-
-## Production Checklist
-
-- Deploy app to Vercel
-- Configure production env vars in Vercel
-- Apply `0002_rooms.sql` before deploying app code
-- Apply `0005_ingest_api_keys.sql` before using ingest-key auth
-- Ensure Supabase daily backups are enabled
-- Configure uptime monitor for `/api/health`
-- Connect Sentry DSN for client + server error tracking
-
-## Data Model
-
-Main tables:
-
-- `public.rooms`
-- `public.room_members`
-- `public.room_invites`
-- `public.doubts`
-- `public.doubt_attachments`
-- `public.doubt_comments`
-- `public.user_ingest_keys`
-
-Enums:
-
-- `public.difficulty_enum` (`easy`, `medium`, `hard`)
-- `public.room_role_enum` (`owner`, `member`)
-
-Storage bucket:
-
-- `doubts-attachments` (private)
-
-All schema, indexes, RLS, and storage policies are in:
-
-- `supabase/migrations/0001_init.sql`
-- `supabase/migrations/0002_rooms.sql`
-- `supabase/migrations/0003_doubt_comments.sql`
+Run `./scripts/test-folders.sh` for isolated folder/subject persistence and migration checks (no Xcode test runtime required).
