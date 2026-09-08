@@ -194,7 +194,12 @@ struct LibraryView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 10) {
-                Image(systemName: "square.stack.3d.up.fill").font(.system(size: 22)).foregroundStyle(Color.recallCoral)
+                Image("Doubtabase-logo-v2", bundle: .module)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .accessibilityLabel("Doubtabase logo")
                 Text("doubtabase").font(.system(size: 19, weight: .bold))
             }.padding(.horizontal, 12).padding(.top, 28).padding(.bottom, 24)
             nav("All questions", icon: "square.grid.2x2", count: store.questions.count)

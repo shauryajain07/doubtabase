@@ -16,7 +16,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "RecallMac",
-            path: "Sources/RecallMac"
+            path: "Sources/RecallMac",
+            resources: [
+                .copy("Resources/Doubtabase-logo-v2.png")
+            ]
         )
     ]
 )
