@@ -27,16 +27,25 @@ final class CapturePanelController: ObservableObject {
         return screen.frame.width - left.width - right.width + 20
     }
 
+    // Keep the expanded surface intentionally compact. The idle width follows
+    // the screen's camera/menu-bar safe areas; the action surface should still
+    // read as a focused control instead of a wide banner.
+    var expandedWidth: CGFloat {
+        min(max(360, compactWidth + 48), 520)
+    }
+
+    private var expandedHeight: CGFloat { topInset + 72 }
+
     var panelSize: CGSize {
         switch panelState {
         case .compact:
             return retainsExpandedFrame
-                ? CGSize(width: max(360, compactWidth + 48), height: 74 + topInset)
+                ? CGSize(width: expandedWidth, height: expandedHeight)
                 : CGSize(width: compactWidth, height: topInset > 0 ? topInset + 2 : 20)
         case .expanded:
-            return CGSize(width: max(360, compactWidth + 48), height: 74 + topInset)
+            return CGSize(width: expandedWidth, height: expandedHeight)
         case .saved:
-            return CGSize(width: max(360, compactWidth + 48), height: 74 + topInset)
+            return CGSize(width: expandedWidth, height: expandedHeight)
         }
     }
 
@@ -69,6 +78,7 @@ final class CapturePanelController: ObservableObject {
         capturePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         capturePanel.hidesOnDeactivate = false
         capturePanel.ignoresMouseEvents = false
+        capturePanel.onMouseDown = { RecallHaptics.play(.levelChange, pulses: 2) }
 
         panel = capturePanel
         applyWindowFrame()
@@ -144,8 +154,17 @@ final class CapturePanelController: ObservableObject {
 }
 
 private final class RecallCapturePanel: NSPanel {
+    var onMouseDown: (() -> Void)?
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            onMouseDown?()
+        }
+        super.sendEvent(event)
+    }
 }
 
 private struct CapturePanelView: View {

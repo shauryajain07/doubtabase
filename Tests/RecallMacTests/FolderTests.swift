@@ -14,8 +14,32 @@ struct FolderTests {
         try tests.testFoldersMigrateAndPersistWithoutLosingQuestions()
         try tests.testEmptyLibraryStaysEmptyAndEmptyFoldersPersist()
         try tests.testSubjectsPersistAndKeepManualAssignments()
+        try tests.testSubjectDeletionKeepsQuestions()
         print("Passed subject and folder migration, validation, membership, removal, and persistence checks")
     }
+    @MainActor
+    func testSubjectDeletionKeepsQuestions() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = SampleData.questions[0]
+        try JSONEncoder().encode([original]).write(to: directory.appendingPathComponent("library.json"))
+        let store = LibraryStore(libraryDirectory: directory, indexAutomatically: false)
+        XCTAssertTrue(store.removeSubject("Economics"))
+        XCTAssertEqual(store.questions.first?.id, original.id)
+        XCTAssertEqual(store.questions.first?.subject, "Unsorted")
+        XCTAssertEqual(store.questions.first?.isSubjectManuallyAssigned, true)
+        XCTAssertFalse(store.removeSubject("Unsorted"))
+        XCTAssertFalse(store.removeSubject("Missing"))
+        XCTAssertEqual(store.createSubject(named: "Engineering"), "Engineering")
+        XCTAssertTrue(store.removeSubject("Engineering"))
+        let restored = LibraryStore(libraryDirectory: directory, indexAutomatically: false)
+        XCTAssertEqual(restored.subjectNames, ["Unsorted"])
+        XCTAssertTrue(restored.customSubjects.isEmpty)
+        XCTAssertEqual(restored.questions.first?.title, original.title)
+        XCTAssertEqual(restored.questions.count, 1)
+    }
+
     @MainActor
     func testFoldersMigrateAndPersistWithoutLosingQuestions() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

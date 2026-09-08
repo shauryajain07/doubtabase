@@ -8,7 +8,7 @@ struct SubjectSuggestion: Codable, Equatable, Hashable {
 
 struct Question: Codable, Equatable, Identifiable {
     let id: UUID
-    let title: String
+    var title: String
     let excerpt: String
     var subject: String
     var topic: String
@@ -137,4 +137,23 @@ struct LibrarySnapshot: Codable {
     var questions: [Question]
     var folders: [LibraryFolder]
     var subjects: [String]?
+}
+
+/// Uses source text verbatim rather than inventing a summary.
+enum ScreenshotTitle {
+    static func suggested(from text: String) -> String? {
+        let lines = text.components(separatedBy: .newlines).map {
+            $0.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }.filter { line in
+            line.count >= 12 && line.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count >= 8
+        }
+        let starters = ["why ", "how ", "what ", "when ", "which ", "explain ", "calculate ", "find ", "determine ", "describe ", "evaluate ", "show ", "prove "]
+        guard let line = lines.first(where: { line in
+            line.contains("?") || starters.contains(where: { line.lowercased().hasPrefix($0) })
+        }) ?? lines.first else { return nil }
+        guard line.count > 90 else { return line }
+        let prefix = String(line.prefix(87))
+        let shortened = prefix.lastIndex(of: " ").map { String(prefix[..<$0]) } ?? prefix
+        return shortened + "…"
+    }
 }

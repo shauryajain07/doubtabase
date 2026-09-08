@@ -54,7 +54,7 @@ actor QuestionRetrieval {
         "apple-sentence-en-\(embedding?.revision ?? 0)-chunks-v1"
     }
 
-    func index(_ question: Question) throws -> (QuestionIndex, String, SubjectSuggestion?) {
+    func index(_ question: Question, allowedSubjects: [String] = []) throws -> (QuestionIndex, String, SubjectSuggestion?) {
         var recognized = question.recognizedText ?? ""
         if question.recognizedText == nil, let path = question.imagePath {
             let request = VNRecognizeTextRequest()
@@ -67,26 +67,24 @@ actor QuestionRetrieval {
                       question.imagePath == nil ? question.subject + " " + question.topic : ""]
             .filter { !$0.isEmpty }.joined(separator: "\n")
         if let cached = question.searchIndex, cached.model == modelID, cached.sourceText == source {
-            return (cached, recognized, nil)
+            return (cached, recognized, question.imagePath == nil ? nil : classify(recognized, allowedSubjects: allowedSubjects))
         }
         let chunks = RetrievalMath.chunks(source).map { QuestionChunk(text: $0, vector: embedding?.vector(for: $0)) }
         let index = QuestionIndex(model: modelID, sourceText: source, chunks: chunks)
-        return (index, recognized, question.imagePath == nil ? nil : classify(recognized))
+        return (index, recognized, question.imagePath == nil ? nil : classify(recognized, allowedSubjects: allowedSubjects))
     }
 
-    private func classify(_ text: String) -> SubjectSuggestion {
+    func classify(_ text: String, allowedSubjects: [String]) -> SubjectSuggestion {
         let unknown = SubjectSuggestion(subject: "Unsorted", topic: "Needs classification", accent: "coral")
-        guard !text.isEmpty, let vector = embedding?.vector(for: String(text.prefix(2000))) else { return unknown }
-        let subjects: [(String, String, String, String)] = [
-            ("Mathematics", "Mathematics", "lilac", "Mathematics algebra calculus integration derivative equations geometry probability"),
-            ("Biology", "Biology", "sage", "Biology cells genetics enzymes organisms ATP membrane transport evolution"),
-            ("Physics", "Physics", "blue", "Physics forces motion energy mechanics electricity waves acceleration"),
-            ("Economics", "Economics", "coral", "Economics supply demand prices inflation wages markets scarcity monetary policy"),
-            ("History", "History", "gold", "History war treaties empires historical sources cold war political revolutions")
-        ]
-        let ranked = subjects.compactMap { item -> (SubjectSuggestion, Double)? in
-            guard let prototype = embedding?.vector(for: item.3) else { return nil }
-            return (SubjectSuggestion(subject: item.0, topic: item.1, accent: item.2), RetrievalMath.cosine(vector, prototype))
+        let subjects = Set(allowedSubjects.filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.lowercased() != "unsorted"
+        }).sorted()
+        guard !subjects.isEmpty, !text.isEmpty,
+              let vector = embedding?.vector(for: String(text.prefix(2000))) else { return unknown }
+        let ranked = subjects.compactMap { subject -> (SubjectSuggestion, Double)? in
+            guard let prototype = embedding?.vector(for: subject) else { return nil }
+            return (SubjectSuggestion(subject: subject, topic: "General", accent: "coral"),
+                    RetrievalMath.cosine(vector, prototype))
         }.sorted { $0.1 > $1.1 }
         guard let best = ranked.first, best.1 >= 0.25,
               ranked.count < 2 || best.1 - ranked[1].1 >= 0.025 else { return unknown }

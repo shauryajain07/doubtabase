@@ -174,13 +174,24 @@ final class LibraryStore: ObservableObject {
                 indexRevision += 1
             }
             do {
-                let (index, recognized, suggestion) = try await retrieval.index(question)
+                let (index, recognized, _) = try await retrieval.index(question)
+                // Settings can change while OCR is running. Classify against the latest list.
+                var allowed = customSubjects
+                var suggestion = await retrieval.classify(recognized, allowedSubjects: allowed)
+                while allowed != customSubjects {
+                    allowed = customSubjects
+                    suggestion = await retrieval.classify(recognized, allowedSubjects: allowed)
+                }
                 guard let position = questions.firstIndex(where: { $0.id == question.id }) else { return }
+                if questions[position].title.hasPrefix("New question from "),
+                   let title = ScreenshotTitle.suggested(from: recognized) {
+                    questions[position].title = title
+                }
                 questions[position].recognizedText = recognized
                 questions[position].searchIndex = index
                 questions[position].indexingError = question.imagePath != nil && recognized.isEmpty
                     ? "No readable text found. Search uses the filename." : nil
-                if let suggestion, questions[position].isSubjectManuallyAssigned != true {
+                if questions[position].imagePath != nil, questions[position].isSubjectManuallyAssigned != true {
                     questions[position].subject = suggestion.subject
                     questions[position].topic = suggestion.topic
                 }
@@ -196,6 +207,7 @@ final class LibraryStore: ObservableObject {
     func subjectNameError(_ name: String) -> String? {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if clean.isEmpty { return "Enter a subject name." }
+        if clean.localizedCaseInsensitiveCompare("Unsorted") == .orderedSame { return "Unsorted is reserved for questions awaiting classification." }
         if clean.count > 80 { return "Use 80 characters or fewer." }
         if subjectNames.contains(where: { $0.localizedCaseInsensitiveCompare(clean) == .orderedSame }) {
             return "This subject already exists."
@@ -209,7 +221,29 @@ final class LibraryStore: ObservableObject {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         customSubjects.append(clean)
         guard persist() else { customSubjects.removeAll { $0 == clean }; return nil }
+        questions.filter { $0.isSubjectManuallyAssigned != true }.forEach(scheduleIndex)
         return clean
+    }
+
+    @discardableResult
+    func removeSubject(_ subject: String) -> Bool {
+        guard subject != "Unsorted", subjectNames.contains(subject) else { return false }
+        let oldSubjects = customSubjects
+        let oldQuestions = questions
+        customSubjects.removeAll { $0 == subject }
+        for index in questions.indices where questions[index].subject == subject {
+            questions[index].subject = "Unsorted"
+            questions[index].topic = "Needs classification"
+            // Keep this explicit choice stable across background indexing and relaunch.
+            questions[index].isSubjectManuallyAssigned = true
+        }
+        guard persist() else {
+            customSubjects = oldSubjects
+            questions = oldQuestions
+            return false
+        }
+        indexRevision += 1
+        return true
     }
 
     @discardableResult

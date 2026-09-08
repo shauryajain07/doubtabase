@@ -2,6 +2,24 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+enum RecallHaptics {
+    static func play(
+        _ pattern: NSHapticFeedbackManager.FeedbackPattern,
+        pulses: Int = 1,
+        spacing: TimeInterval = 0.045
+    ) {
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
+
+        guard pulses > 1 else { return }
+        for pulse in 1..<pulses {
+            DispatchQueue.main.asyncAfter(deadline: .now() + spacing * Double(pulse)) {
+                NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
+            }
+        }
+    }
+}
+
 struct LibraryView: View {
     @EnvironmentObject private var store: LibraryStore
     @State private var query = ""
@@ -47,11 +65,14 @@ struct LibraryView: View {
                     }
                     Text("⌘ F").font(.system(size: 11)).foregroundStyle(Color.recallMuted)
                     Divider().frame(height: 20).padding(.horizontal, 14)
-                    Button(action: addScreenshots) {
+                    Button {
+                        RecallHaptics.play(.levelChange, pulses: 2)
+                        addScreenshots()
+                    } label: {
                         Label("Add screenshots", systemImage: "plus")
                     }.buttonStyle(.borderedProminent).tint(.recallCoral).keyboardShortcut("o")
                 }
-                .padding(.horizontal, 30).frame(height: 72).background(.white)
+                .padding(.horizontal, 24).padding(.vertical, 18).frame(minHeight: 72).background(.white)
                 Divider()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
@@ -90,7 +111,7 @@ struct LibraryView: View {
                                         .font(.system(size: 12)).foregroundStyle(Color.recallMuted)
                                 }
                                 Spacer()
-                            }.padding(18).background(Color.recallCoral.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                            }.padding(20).background(Color.recallCoral.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                         }
                         if filtered.isEmpty {
                             VStack(spacing: 12) {
@@ -101,10 +122,13 @@ struct LibraryView: View {
                                 else { Button("Clear search") { query = "" } }
                             }.frame(maxWidth: .infinity, minHeight: 300)
                         } else {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 20)], spacing: 20) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 20)], spacing: 20) {
                                 ForEach(filtered) { question in
                                     Button { opened = question } label: { QuestionCard(question: question) }
-                                        .buttonStyle(.plain).help("Open question")
+                                        .buttonStyle(.plain)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                        .help("Open question")
                                         .contextMenu {
                                             Menu("Move to folder") {
                                                 Button("Unfiled") { store.move(question, to: nil) }
@@ -116,7 +140,7 @@ struct LibraryView: View {
                                 }
                             }
                         }
-                    }.padding(30)
+                    }.padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 32)
                 }
             }
         }
@@ -172,7 +196,7 @@ struct LibraryView: View {
             HStack(spacing: 10) {
                 Image(systemName: "square.stack.3d.up.fill").font(.system(size: 22)).foregroundStyle(Color.recallCoral)
                 Text("doubtabase").font(.system(size: 19, weight: .bold))
-            }.padding(.horizontal, 12).padding(.top, 24).padding(.bottom, 30)
+            }.padding(.horizontal, 12).padding(.top, 28).padding(.bottom, 24)
             nav("All questions", icon: "square.grid.2x2", count: store.questions.count)
             nav("To review", icon: "circle.dashed", count: store.questions.filter { $0.reviewProgress < 100 }.count)
             nav("Reviewed", icon: "checkmark.circle", count: store.questions.filter { $0.reviewProgress == 100 }.count)
@@ -195,8 +219,13 @@ struct LibraryView: View {
                             }.font(.system(size: 13, weight: selectedFolderID == folder.id ? .semibold : .regular))
                                 .foregroundStyle(selectedFolderID == folder.id ? Color.recallCoral : Color.recallMuted)
                                 .padding(.horizontal, 12).padding(.vertical, 11)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(selectedFolderID == folder.id ? Color.recallCoral.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(.plain).contextMenu {
+                                .contentShape(RoundedRectangle(cornerRadius: 8))
+                        }.buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .contextMenu {
                             Button("Rename folder") { folderEditor = FolderEditorRequest(folder: folder) }
                             Button("Remove folder (keep questions)") {
                                 if store.removeFolder(folder), selectedFolderID == folder.id {
@@ -214,6 +243,16 @@ struct LibraryView: View {
                     }.foregroundStyle(Color.recallMuted).padding(.top, 24).padding(.horizontal, 12).padding(.bottom, 5)
                     ForEach(store.subjectNames, id: \.self) { subject in
                         nav(subject, icon: "book.closed", count: store.questions.filter { $0.subject == subject }.count, key: "subject:" + subject)
+                            .contextMenu {
+                                if subject != "Unsorted" {
+                                    Button("Delete subject (keep questions)", role: .destructive) {
+                                        if store.removeSubject(subject), selectedSubject == subject {
+                                            selection = "All questions"
+                                            query = ""
+                                        }
+                                    }
+                                }
+                            }
                     }
                 }
             }
@@ -222,7 +261,7 @@ struct LibraryView: View {
                 Label("Stored on this Mac", systemImage: "internaldrive").font(.system(size: 12, weight: .medium))
                 Text("Screenshots stay in your local library.").font(.system(size: 11)).foregroundStyle(Color.recallMuted)
             }.padding(12)
-        }.padding(.horizontal, 14).padding(.bottom, 14).frame(width: 210).background(Color.white.opacity(0.65))
+        }.padding(.horizontal, 16).padding(.bottom, 20).frame(width: 224).background(Color.white.opacity(0.65))
     }
 
     private func nav(_ title: String, icon: String, count: Int, key: String? = nil) -> some View {
@@ -236,8 +275,13 @@ struct LibraryView: View {
             }.font(.system(size: 13, weight: selectedFolderID == nil && selection == value ? .semibold : .regular))
                 .foregroundStyle(selectedFolderID == nil && selection == value ? Color.recallCoral : Color.recallMuted)
                 .padding(.horizontal, 12).padding(.vertical, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(selectedFolderID == nil && selection == value ? Color.recallCoral.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -260,10 +304,11 @@ struct QuestionCard: View {
                     Spacer()
                     Image(systemName: "arrow.up.right")
                 }.font(.system(size: 11)).foregroundStyle(Color.recallMuted)
-            }.padding(17)
+            }.padding(20)
         }
         .background(.white, in: RoundedRectangle(cornerRadius: 14))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(hovered ? Color.recallCoral.opacity(0.45) : Color.recallLine, lineWidth: 1))
         .shadow(color: .black.opacity(hovered ? 0.07 : 0.025), radius: hovered ? 12 : 4, y: 4)
         .onHover { hovered = $0 }.animation(.easeOut(duration: 0.15), value: hovered)
@@ -298,18 +343,27 @@ struct QuestionDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text(question.subject + " / " + question.topic).font(.system(size: 12)).foregroundStyle(Color.recallMuted)
+                Text(current.subject + " / " + current.topic).font(.system(size: 12)).foregroundStyle(Color.recallMuted)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            Picker("Subject", selection: Binding(get: { current.subject }, set: { store.setSubject(current, to: $0) })) {
-                ForEach(store.subjectNames, id: \.self) { Text($0).tag($0) }
-            }.pickerStyle(.menu).frame(maxWidth: 300)
-            Picker("Folder", selection: Binding<UUID?>(get: { current.folderID }, set: { store.move(current, to: $0) })) {
-                Text("Unfiled").tag(nil as UUID?)
-                ForEach(store.folders) { folder in Text(folder.name).tag(Optional(folder.id)) }
-            }.pickerStyle(.menu).frame(maxWidth: 300)
-            Text(question.title).font(.system(size: 24, weight: .semibold))
+            Text(current.title).font(.system(size: 24, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Subject").font(.caption).foregroundStyle(Color.recallMuted)
+                    Picker("Subject", selection: Binding(get: { current.subject }, set: { store.setSubject(current, to: $0) })) {
+                        ForEach(store.subjectNames, id: \.self) { Text($0).tag($0) }
+                    }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Folder").font(.caption).foregroundStyle(Color.recallMuted)
+                    Picker("Folder", selection: Binding<UUID?>(get: { current.folderID }, set: { store.move(current, to: $0) })) {
+                        Text("Unfiled").tag(nil as UUID?)
+                        ForEach(store.folders) { folder in Text(folder.name).tag(Optional(folder.id)) }
+                    }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }.pickerStyle(.menu).padding(16)
+                .background(Color.recallCanvas, in: RoundedRectangle(cornerRadius: 12))
             QuestionVisual(question: question).frame(maxWidth: .infinity, maxHeight: .infinity).clipShape(RoundedRectangle(cornerRadius: 12))
             if let issue = current.indexingError {
                 Text(issue).font(.system(size: 12)).foregroundStyle(.orange)
@@ -326,10 +380,13 @@ struct QuestionDetail: View {
                     Button { NSWorkspace.shared.open(URL(fileURLWithPath: path)) } label: { Label("Open original", systemImage: "arrow.up.right.square") }
                 } else { Text("Example question").font(.system(size: 12)).foregroundStyle(Color.recallMuted) }
                 Spacer()
-                Button(reviewed ? "Move to review" : "Mark reviewed") { store.setReviewed(question, reviewed: !reviewed) }
+                Button(reviewed ? "Move to review" : "Mark reviewed") {
+                    RecallHaptics.play(reviewed ? .alignment : .levelChange, pulses: 2)
+                    store.setReviewed(question, reviewed: !reviewed)
+                }
                     .buttonStyle(.borderedProminent).tint(.recallCoral)
             }
-        }.padding(28).frame(minWidth: 700, idealWidth: 820, minHeight: 600, idealHeight: 720).background(.white)
+        }.padding(32).frame(minWidth: 700, idealWidth: 820, minHeight: 600, idealHeight: 720).background(.white)
     }
 }
 
@@ -344,102 +401,261 @@ struct CaptureOverlay: View {
     var compactWidth: CGFloat = 156
     @State private var isTargeted = false
     @State private var savedNotice: CaptureNotice?
+    @State private var isHovering = false
+    @State private var chooseHovered = false
+    @State private var lastHoverHaptic: TimeInterval = -.infinity
     @State private var lastTargetHaptic: TimeInterval = -.infinity
     @State private var lastSaveHaptic: TimeInterval = -.infinity
+    @State private var expansionAnchor = UnitPoint(x: 0.5, y: 0)
 
     private var isCompact: Bool { compactMode && !isTargeted }
-    private var width: CGFloat { isCompact ? compactWidth : max(360, compactWidth + 48) }
-    private var height: CGFloat { isCompact ? (topInset > 0 ? topInset + 2 : 20) : topInset + 74 }
+    private var expandedWidth: CGFloat { min(max(360, compactWidth + 48), 520) }
+    private var compactHeight: CGFloat { topInset > 0 ? topInset + 2 : 20 }
+    private var expandedHeight: CGFloat { topInset + 72 }
+    private var width: CGFloat { isCompact ? compactWidth : expandedWidth }
+    private var height: CGFloat { isCompact ? compactHeight : expandedHeight }
+    private var notchShape: NotchShape { NotchShape(bottomRadius: isCompact ? 11 : 22) }
+    private var statusKey: String {
+        if savedNotice != nil { return "saved" }
+        if isTargeted { return "targeted" }
+        return "ready"
+    }
+    private var statusAccent: Color { savedNotice != nil ? .recallSage : .recallCoral }
+    private var statusTitle: String {
+        if savedNotice != nil { return "Saved to library" }
+        if isTargeted { return "Release to save" }
+        return "Drop to save"
+    }
+    private var statusDetail: String {
+        if savedNotice != nil { return "Added to your questions" }
+        if isTargeted { return "Your screenshot is ready" }
+        return "Drag a screenshot here"
+    }
+    private var statusSymbol: String {
+        if savedNotice != nil { return "checkmark" }
+        if isTargeted { return "arrow.down" }
+        return "photo.badge.plus"
+    }
+    private var outlineColor: Color {
+        if isCompact { return Color.white.opacity(0.18) }
+        if isTargeted || savedNotice != nil { return statusAccent.opacity(0.68) }
+        return Color.white.opacity(0.32)
+    }
+    private var outlineWidth: CGFloat { isCompact ? 0.8 : 1.2 }
+
+    @ViewBuilder
+    private var panelBackground: some View {
+        notchShape.fill(Color.black)
+        .overlay {
+            notchShape.stroke(outlineColor, lineWidth: outlineWidth)
+        }
+    }
+
+    private var pointerExpansionAnchor: UnitPoint {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
+                ?? NSScreen.main
+                ?? NSScreen.screens.first else { return .top }
+        let expandedLeft = screen.frame.midX - expandedWidth / 2
+        let normalizedX = (mouseLocation.x - expandedLeft) / expandedWidth
+        return UnitPoint(x: min(max(normalizedX, 0.10), 0.90), y: 0)
+    }
+
+    private var panelTransition: AnyTransition {
+        let collapseX = compactWidth / expandedWidth
+        let collapseY = compactHeight / expandedHeight
+        return .asymmetric(
+            insertion: .scale(scale: 0.82, anchor: expansionAnchor).combined(with: .opacity),
+            removal: .modifier(
+                active: PointerScaleEffect(
+                    scaleX: collapseX,
+                    scaleY: collapseY,
+                    anchor: expansionAnchor
+                ),
+                identity: PointerScaleEffect(
+                    scaleX: 1,
+                    scaleY: 1,
+                    anchor: expansionAnchor
+                )
+            )
+        )
+    }
+
+    private func expandFromPointer() {
+        expansionAnchor = pointerExpansionAnchor
+        onPanelStateChange?(.expanded)
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
-            NotchShape(bottomRadius: isCompact ? 10 : 22).fill(.black)
-            if !isCompact {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(savedNotice == nil ? Color.white.opacity(0.09) : Color.green.opacity(0.13))
-                        Image(systemName: savedNotice != nil ? "checkmark" : isTargeted ? "arrow.down" : "photo.badge.plus")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(savedNotice != nil ? Color.green : Color.white.opacity(0.9))
-                            .contentTransition(.symbolEffect(.replace))
-                    }.frame(width: 38, height: 38)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(savedNotice != nil ? "Saved to library" : isTargeted ? "Release to save" : "Drop a screenshot")
-                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                        Text(savedNotice != nil ? "Ready when you are" : "Keep the question. Stay in flow.")
-                            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.48))
-                            .lineLimit(1)
+            Group {
+                if isCompact {
+                    panelBackground
+                    if topInset == 0 {
+                        Capsule()
+                            .fill(.white.opacity(isHovering ? 0.62 : 0.30))
+                            .frame(width: isHovering ? 28 : 22, height: 3)
+                            .padding(.top, 11)
+                            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isHovering)
                     }
-                    Spacer(minLength: 0)
-                    if savedNotice == nil {
-                        Button(action: onBrowse) {
-                            Image(systemName: "plus").font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.8))
-                                .frame(width: 28, height: 28)
-                                .background(.white.opacity(0.1), in: Circle())
-                        }.buttonStyle(.plain).help("Choose screenshots").accessibilityLabel("Choose screenshots")
+                } else {
+                    ZStack(alignment: .top) {
+                        panelBackground
+                        if isTargeted || savedNotice != nil {
+                            Capsule()
+                                .fill(statusAccent.opacity(0.92))
+                                .frame(width: savedNotice != nil ? 46 : 68, height: 3)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                                .padding(.bottom, 8)
+                        }
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(statusAccent.opacity(savedNotice != nil || isTargeted ? 0.19 : 0.11))
+                                Image(systemName: statusSymbol)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(statusAccent)
+                                    .contentTransition(.symbolEffect(.replace))
+                                    .scaleEffect(isTargeted || savedNotice != nil ? 1.06 : 1)
+                            }
+                            .frame(width: 40, height: 40)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(statusTitle)
+                                    .id(statusKey + ".title")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                                Text(statusDetail)
+                                    .id(statusKey + ".detail")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.48))
+                                    .lineLimit(1)
+                                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .clipped()
+                            Spacer(minLength: 4)
+                            if savedNotice == nil {
+                                Button {
+                                    onBrowse()
+                                } label: {
+                                    Label("Choose", systemImage: "plus")
+                                        .labelStyle(.titleAndIcon)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.white.opacity(chooseHovered ? 1 : 0.84))
+                                        .padding(.horizontal, 11)
+                                        .frame(height: 31)
+                                        .background(.white.opacity(chooseHovered ? 0.17 : 0.10), in: Capsule())
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .onHover { chooseHovered = $0 }
+                                .help("Choose screenshots")
+                                .accessibilityLabel("Choose screenshots")
+                                .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.72), value: chooseHovered)
+                            }
+                        }
+                        .padding(.horizontal, 22)
+                        .frame(width: width, height: 72)
+                        .padding(.top, topInset)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: statusKey)
                     }
+                    .transition(panelTransition)
                 }
-                .padding(.horizontal, 26)
-                .frame(width: max(360, compactWidth + 48), height: 74)
-                .padding(.top, topInset)
-                .transition(.asymmetric(
-                    insertion: .opacity.animation(.easeOut(duration: 0.18)),
-                    removal: .opacity.animation(.easeOut(duration: 0.10))
-                ))
-            } else if topInset == 0 {
-                Capsule().fill(.white.opacity(0.22)).frame(width: 22, height: 2).padding(.top, 12)
             }
+            .animation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.84), value: isCompact)
         }
         .frame(width: width, height: height)
-        .clipShape(NotchShape(bottomRadius: isCompact ? 10 : 22))
-        .contentShape(NotchShape(bottomRadius: isCompact ? 10 : 22))
-        .animation(reduceMotion ? nil : (isCompact
-            ? .timingCurve(0.22, 0.8, 0.25, 1, duration: 0.22)
-            : .spring(response: 0.20, dampingFraction: 0.92)), value: isCompact)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isTargeted)
+        .clipShape(notchShape)
+        .contentShape(notchShape)
+        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84), value: isCompact)
         .onDrop(of: [UTType.fileURL.identifier, UTType.png.identifier, UTType.tiff.identifier, UTType.image.identifier], isTargeted: $isTargeted) { providers in
+            guard !providers.isEmpty else { return false }
             store.importProviders(providers)
-            return !providers.isEmpty
+            return true
         }
         .onChange(of: store.lastCapture?.id) { _, _ in
-            savedNotice = store.lastCapture
-            if savedNotice != nil {
-                let now = ProcessInfo.processInfo.systemUptime
-                // Multiple files saved together should feel like one confirmation.
-                if now - lastSaveHaptic > 0.3 {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-                    lastSaveHaptic = now
-                }
-                onPanelStateChange?(.saved)
+            guard let notice = store.lastCapture else { return }
+            savedNotice = notice
+            let now = ProcessInfo.processInfo.systemUptime
+            // Multiple files saved together should feel like one confirmation.
+            if now - lastSaveHaptic > 0.3 {
+                RecallHaptics.play(.generic, pulses: 2)
+                lastSaveHaptic = now
             }
+            onPanelStateChange?(.saved)
         }
         .onChange(of: isTargeted) { _, targeted in
             if targeted {
                 let now = ProcessInfo.processInfo.systemUptime
                 // Resizing can briefly retrigger drag entry; avoid repeated taps.
                 if now - lastTargetHaptic > 0.3 {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                    RecallHaptics.play(.alignment, pulses: 2)
                     lastTargetHaptic = now
                 }
                 savedNotice = nil
-                onPanelStateChange?(.expanded)
+                expandFromPointer()
+            } else if savedNotice == nil {
+                onPanelStateChange?(.compact)
             }
-            else if savedNotice == nil { onPanelStateChange?(.compact) }
         }
         .onChange(of: panelState) { _, state in
-            // Preserve the success content while it fades out during retraction.
-            if state == .expanded { savedNotice = nil }
+            // Preserve the success content during the saved-state hold, then
+            // clear it before the next hover can expand the compact affordance.
+            if state == .expanded || state == .compact {
+                savedNotice = nil
+            }
         }
-        .onTapGesture { if isCompact { onPanelStateChange?(.expanded) } }
+        .onTapGesture {
+            if isCompact {
+                expandFromPointer()
+            }
+        }
         .onHover { hovering in
-            if hovering && (savedNotice == nil || isCompact) { onPanelStateChange?(.expanded) }
-            else if !hovering && !isTargeted && savedNotice == nil { onPanelStateChange?(.compact) }
+            isHovering = hovering
+            if hovering {
+                if isCompact {
+                    triggerHoverHaptic()
+                    expandFromPointer()
+                }
+            } else if !isTargeted && savedNotice == nil {
+                onPanelStateChange?(.compact)
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Screenshot capture")
+        .accessibilityValue(statusTitle)
         .accessibilityHint("Drop a screenshot here, or expand to choose a file")
+    }
+
+    private func triggerHoverHaptic() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastHoverHaptic > 0.65 else { return }
+        RecallHaptics.play(.levelChange, pulses: 2)
+        lastHoverHaptic = now
+    }
+}
+
+private struct PointerScaleEffect: GeometryEffect {
+    var scaleX: CGFloat
+    var scaleY: CGFloat
+    let anchor: UnitPoint
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(scaleX, scaleY) }
+        set {
+            scaleX = newValue.first
+            scaleY = newValue.second
+        }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let anchorPoint = CGPoint(x: size.width * anchor.x, y: size.height * anchor.y)
+        var transform = CGAffineTransform.identity
+        transform = transform.translatedBy(x: anchorPoint.x, y: anchorPoint.y)
+        transform = transform.scaledBy(x: scaleX, y: scaleY)
+        transform = transform.translatedBy(x: -anchorPoint.x, y: -anchorPoint.y)
+        return ProjectionTransform(transform)
     }
 }
 
@@ -546,7 +762,7 @@ private struct SubjectEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("New subject", systemImage: "book.closed").font(.title2.weight(.semibold))
-            Text("Add a subject for your courses or study topics.").font(.system(size: 13)).foregroundStyle(Color.recallMuted)
+            Text("Automatic sorting chooses only from subjects you add here. Uncertain matches stay Unsorted.").font(.system(size: 13)).foregroundStyle(Color.recallMuted)
             TextField("Subject name", text: $name).textFieldStyle(.roundedBorder).focused($focused).onSubmit(save)
             if let error = saveError ?? (name.isEmpty ? nil : store.subjectNameError(name)) {
                 Text(error).font(.system(size: 12)).foregroundStyle(.red)

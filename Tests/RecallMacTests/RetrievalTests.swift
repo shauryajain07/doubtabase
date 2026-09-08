@@ -18,7 +18,39 @@ struct RetrievalTests {
         tests.testContextCitesOnlyRetrievedSources()
         try await tests.testSemanticRetrieval()
         try await tests.testMissingImageFails()
-        print("Passed 8 retrieval checks")
+        try await tests.testAllowedSubjects()
+        tests.testScreenshotTitles()
+        print("Passed 10 retrieval checks")
+    }
+
+    func testScreenshotTitles() {
+        XCTAssertEqual(ScreenshotTitle.suggested(from: "Biology Paper 2\nWhy do cells require energy?\n[3 marks]"), "Why do cells require energy?")
+        XCTAssertEqual(ScreenshotTitle.suggested(from: "  Calculate   the acceleration of the trolley. "), "Calculate the acceleration of the trolley.")
+        XCTAssertNil(ScreenshotTitle.suggested(from: "  \n1234\n+ ="))
+        let long = ScreenshotTitle.suggested(from: String(repeating: "question text ", count: 30))!
+        XCTAssertTrue(long.count <= 90)
+        XCTAssertTrue(long.hasSuffix("…"))
+    }
+
+    func testAllowedSubjects() async throws {
+        let retrieval = QuestionRetrieval()
+        let text = "Economics supply demand prices inflation markets"
+        let empty = await retrieval.classify(text, allowedSubjects: [])
+        XCTAssertEqual(empty.subject, "Unsorted")
+        let restricted = await retrieval.classify(text, allowedSubjects: ["Biology"])
+        XCTAssertTrue(["Biology", "Unsorted"].contains(restricted.subject))
+        let custom = "Economics supply demand prices inflation markets"
+        let result = await retrieval.classify(text, allowedSubjects: [custom])
+        XCTAssertEqual(result.subject, custom)
+        var question = Question(title: "Capture", excerpt: "", subject: "Economics", topic: "",
+                                source: "", capturedLabel: "", imagePath: "/unused",
+                                visualMark: "", accent: "coral", reviewProgress: 0)
+        question.recognizedText = text
+        let (index, _, _) = try await retrieval.index(question, allowedSubjects: [custom])
+        question.searchIndex = index
+        let (_, _, cachedSuggestion) = try await retrieval.index(question, allowedSubjects: [])
+        XCTAssertEqual(cachedSuggestion?.subject, "Unsorted")
+        question.isSubjectManuallyAssigned = true
     }
 
     func testSemanticRetrieval() async throws {

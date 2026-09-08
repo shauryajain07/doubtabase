@@ -71,3 +71,5 @@ Use the + beside Folders or Subjects to create your own groups. Add screenshots 
 New libraries start empty. Existing question-only library files are migrated on the next save; questions, folders, and custom subjects are saved together in the local library index.
 
 Run `./scripts/test-folders.sh` for isolated folder/subject persistence and migration checks (no Xcode test runtime required).
+
+Automatic classification uses only the subjects explicitly added by the user through New subject. No built-in subject catalog is used. With no subjects or no confident match, captures remain Unsorted. Adding a subject refreshes automatic classifications; manually assigned subjects are preserved.
