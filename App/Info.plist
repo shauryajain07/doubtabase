@@ -22,5 +22,15 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUFeedURL</key>
+    <string>https://github.com/shauryajain07/doubtabase/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>EyRXVAyczcOJS5bLMLEzO0UcEuE3LTnl1zF0nkYFLLk=</string>
+    <key>SUScheduledCheckInterval</key>
+    <integer>3600</integer>
 </dict>
 </plist>

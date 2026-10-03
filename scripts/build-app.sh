@@ -4,6 +4,18 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_dir="$project_dir/.build/Recall.app"
 asset_path="$project_dir/App/Assets/Doubtabase-logo-v2.png"
+app_version="${APP_VERSION:-0.1.0}"
+app_build_number="${APP_BUILD_NUMBER:-1}"
+
+if [[ ! "$app_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "APP_VERSION must use a three-part version, such as 0.1.2" >&2
+    exit 1
+fi
+if [[ ! "$app_build_number" =~ ^[0-9]+$ ]]; then
+    echo "APP_BUILD_NUMBER must be an integer" >&2
+    exit 1
+fi
+
 swift build --configuration release
 bin_dir="$(swift build --configuration release --show-bin-path)"
 
@@ -11,11 +23,21 @@ rm -rf "$app_dir"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$bin_dir/RecallMac" "$app_dir/Contents/MacOS/RecallMac"
 cp "$project_dir/App/Info.plist" "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $app_version" "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_build_number" "$app_dir/Contents/Info.plist"
 
 resource_bundle="$bin_dir/RecallMac_RecallMac.bundle"
 if [[ -d "$resource_bundle" ]]; then
     cp -R "$resource_bundle" "$app_dir/Contents/Resources/"
 fi
+
+sparkle_framework="$(find "$project_dir/.build/artifacts" -path '*/Sparkle.framework' -type d -print -quit 2>/dev/null || true)"
+if [[ -z "$sparkle_framework" ]]; then
+    echo "Sparkle.framework was not found in .build/artifacts; make sure SwiftPM resolved the Sparkle dependency." >&2
+    exit 1
+fi
+mkdir -p "$app_dir/Contents/Frameworks"
+ditto "$sparkle_framework" "$app_dir/Contents/Frameworks/Sparkle.framework"
 
 iconset_parent="$(mktemp -d "${TMPDIR:-/tmp}/doubtabase-iconset.XXXXXX")"
 iconset_dir="$iconset_parent/Doubtabase.iconset"
@@ -32,7 +54,11 @@ sips -z 1024 1024 "$asset_path" --out "$iconset_dir/icon_512x512@2x.png" >/dev/n
 iconutil -c icns "$iconset_dir" -o "$app_dir/Contents/Resources/Doubtabase.icns"
 
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$app_dir" >/dev/null
+    if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+        codesign --force --deep --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$app_dir" >/dev/null
+    else
+        codesign --force --deep --sign - "$app_dir" >/dev/null
+    fi
 fi
 
-printf 'Built %s\n' "$app_dir"
+printf 'Built %s (%s, build %s)\n' "$app_dir" "$app_version" "$app_build_number"

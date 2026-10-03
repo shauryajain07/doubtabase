@@ -13,12 +13,21 @@ let package = Package(
             targets: ["RecallMac"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6")
+    ],
     targets: [
         .executableTarget(
             name: "RecallMac",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/RecallMac",
             resources: [
                 .copy("Resources/Doubtabase-logo-v2.png")
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         )
     ]

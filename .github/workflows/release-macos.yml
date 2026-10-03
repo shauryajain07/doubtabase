@@ -1,0 +1,71 @@
+name: Release macOS app
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      APP_VERSION: 0.1.${{ github.run_number }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set release versions
+        run: |
+          echo "APP_BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Build app bundle
+        run: ./scripts/build-app.sh
+
+      - name: Package app
+        run: ditto -c -k --sequesterRsrc --keepParent .build/Recall.app ".build/Doubtabase-${APP_VERSION}.zip"
+
+      - name: Sign update archive and create appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          if [[ -z "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+            echo "Missing Actions secret SPARKLE_PRIVATE_ED_KEY. Run ./scripts/setup-auto-updates.sh and add the generated key as a repository secret." >&2
+            exit 1
+          fi
+
+          sign_update="$(find .build/artifacts -path '*/bin/sign_update' -type f -print -quit)"
+          if [[ -z "$sign_update" ]]; then
+            echo "Sparkle's sign_update tool was not found." >&2
+            exit 1
+          fi
+
+          archive=".build/Doubtabase-${APP_VERSION}.zip"
+          signature="$(printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sign_update" --ed-key-file - "$archive" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' | head -n 1)"
+          if [[ -z "$signature" ]]; then
+            echo "Sparkle did not return an EdDSA signature for the update archive." >&2
+            exit 1
+          fi
+
+          python3 scripts/create-appcast.py \
+            --output .build/appcast.xml \
+            --archive "$archive" \
+            --version "$APP_VERSION" \
+            --build "$APP_BUILD_NUMBER" \
+            --tag "v${APP_VERSION}" \
+            --repository "https://github.com/${GITHUB_REPOSITORY}" \
+            --signature "$signature"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: Doubtabase ${{ env.APP_VERSION }}
+          body: Automatically built from commit ${{ github.sha }}.
+          files: |
+            .build/Doubtabase-${{ env.APP_VERSION }}.zip
+            .build/appcast.xml
+          make_latest: true
