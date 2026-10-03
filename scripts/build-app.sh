@@ -27,8 +27,49 @@ cp "$project_dir/App/Info.plist" "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_build_number" "$app_dir/Contents/Info.plist"
 
 resource_bundle="$bin_dir/RecallMac_RecallMac.bundle"
-if [[ -d "$resource_bundle" ]]; then
-    cp -R "$resource_bundle" "$app_dir/Contents/Resources/"
+if [[ ! -d "$resource_bundle" ]]; then
+    echo "SwiftPM resource bundle was not found at $resource_bundle." >&2
+    exit 1
+fi
+
+packaged_resource_bundle="$app_dir/Contents/Resources/RecallMac_RecallMac.bundle"
+if [[ -f "$resource_bundle/Contents/Info.plist" ]]; then
+    # Some SwiftPM/Xcode versions produce a complete macOS bundle.
+    ditto "$resource_bundle" "$packaged_resource_bundle"
+    resource_info_plist="$packaged_resource_bundle/Contents/Info.plist"
+elif [[ -d "$resource_bundle/Contents/Resources" ]]; then
+    # Keep an existing Contents layout and add the bundle metadata if it is absent.
+    ditto "$resource_bundle" "$packaged_resource_bundle"
+    resource_info_plist="$packaged_resource_bundle/Contents/Info.plist"
+else
+    # SwiftPM's direct `swift build` output can be a flat directory. Bundle.module
+    # only finds resources inside a valid bundle in the app's Contents/Resources.
+    mkdir -p "$packaged_resource_bundle/Contents/Resources"
+    ditto "$resource_bundle/." "$packaged_resource_bundle/Contents/Resources/"
+    resource_info_plist="$packaged_resource_bundle/Contents/Info.plist"
+fi
+
+if [[ ! -f "$resource_info_plist" ]]; then
+    cat > "$resource_info_plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleIdentifier</key>
+    <string>doubtabase.RecallMac.resources</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>RecallMac_RecallMac</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+</dict>
+</plist>
+PLIST
 fi
 
 sparkle_framework="$(find "$project_dir/.build/artifacts" -path '*/Sparkle.framework' -type d -print -quit 2>/dev/null || true)"
